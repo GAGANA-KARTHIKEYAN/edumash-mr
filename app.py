@@ -501,42 +501,6 @@ if st.session_state.phase == "quiz":
 
     retriever = st.session_state.retriever
 
-    # Auto-generate next question if not currently waiting for answer
-    if not st.session_state.awaiting_answer:
-        qn = st.session_state.question_count + 1
-
-        if qn > st.session_state.total_questions:
-            st.session_state.phase = "report"
-            st.rerun()
-
-        with st.spinner(f"🤔 Preparing Question {qn}/{st.session_state.total_questions}…"):
-            question = generate_next_question(
-                retriever,
-                st.session_state.student_profile,
-                st.session_state.asked_questions,
-                qn,
-                st.session_state.language
-            )
-
-        st.session_state.current_question = question
-        st.session_state.asked_questions.append(question)
-
-        difficulty_pill = {
-            "easy"  : '<span class="pill pill-green">Easy</span>',
-            "medium": '<span class="pill pill-amber">Medium</span>',
-            "hard"  : '<span class="pill pill-red">Hard</span>',
-        }.get(question.get("difficulty", "medium"), "")
-
-        concept_pill = f'<span class="pill pill-blue">📌 {question.get("concept","concept")}</span>'
-
-        add_msg("assistant",
-            f"**Question {qn}/{st.session_state.total_questions}** "
-            f"{difficulty_pill} {concept_pill}\n\n"
-            f"**{question['question']}**\n\n"
-            f"*Take your time — answer in your own words.*",
-        )
-        st.session_state.awaiting_answer = True
-        st.rerun()
 
     # Multimodal Input Options
     # Multimodal Input Options
@@ -655,8 +619,46 @@ if st.session_state.phase == "quiz":
         if q_num >= st.session_state.total_questions:
             st.session_state.phase = "report"
 
+        st.session_state.current_question = None # Clear after evaluation
         st.rerun()
 
+    # ── Auto-generate next question if not currently waiting for answer ──
+    if not st.session_state.awaiting_answer:
+        from explanation_module.engine import generate_next_question
+        qn = st.session_state.question_count + 1
+
+        if qn > st.session_state.total_questions:
+            st.session_state.phase = "report"
+            st.rerun()
+
+        with st.spinner(f"🤔 Preparing Question {qn}/{st.session_state.total_questions}…"):
+            question = generate_next_question(
+                retriever,
+                st.session_state.student_profile,
+                st.session_state.asked_questions,
+                qn,
+                st.session_state.language
+            )
+
+        st.session_state.current_question = question
+        st.session_state.asked_questions.append(question)
+
+        difficulty_pill = {
+            "easy"  : '<span class="pill pill-green">Easy</span>',
+            "medium": '<span class="pill pill-amber">Medium</span>',
+            "hard"  : '<span class="pill pill-red">Hard</span>',
+        }.get(question.get("difficulty", "medium"), "")
+
+        concept_pill = f'<span class="pill pill-blue">📌 {question.get("concept","concept")}</span>'
+
+        add_msg("assistant",
+            f"**Question {qn}/{st.session_state.total_questions}** "
+            f"{difficulty_pill} {concept_pill}\n\n"
+            f"**{question['question']}**\n\n"
+            f"*Take your time — answer in your own words.*",
+        )
+        st.session_state.awaiting_answer = True
+        st.rerun()
 
 # ═══════════════════════════════════════════════════════════════════
 # Report Phase
