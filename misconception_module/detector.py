@@ -24,24 +24,6 @@ def _get_graph_gen():
     return _graph_gen
 
 
-# ── Lazy-loaded Semantic Model ──────────────────────────────────────
-_semantic_model = None
-
-def _get_semantic_model():
-    global _semantic_model
-    if _semantic_model is not None:
-        return _semantic_model
-    try:
-        from sentence_transformers import SentenceTransformer
-        print("[Detector] Loading Semantic Similarity Model...")
-        _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
-        print("[Detector] ✓ Semantic Model loaded.")
-    except Exception as e:
-        print(f"[Detector] Semantic model load failed: {e}")
-        _semantic_model = None
-    return _semantic_model
-
-
 STOP_WORDS = {
     "the", "a", "an", "is", "of", "in", "to", "and", "or", "it", "this",
     "that", "which", "with", "from", "by", "on", "at", "are", "was", "were",
@@ -62,13 +44,11 @@ def detect_misconceptions(
     student_answer: str,
     reference_text: str,
     graph_nodes: List[str] = None,
+    embedder = None, # 🌟 Accept shared embedder model
 ) -> Dict:
     """
     Compare student answer against reference context.
-
-    Returns dict with:
-      missing_concepts, incorrect_relations, score, graph_missing,
-      student_triplets, ref_triplets, missing_links
+    Returns dict with missing_concepts, incorrect_relations, score, etc.
     """
     student_words = set(extract_keywords(student_answer))
     ref_words     = set(extract_keywords(reference_text))
@@ -86,19 +66,22 @@ def detect_misconceptions(
 
     # ── 2. Semantic Similarity (Meaning-based) ──
     semantic_score = keyword_score # Default fallback
-    model = _get_semantic_model()
-    if model:
+    
+    if embedder:
         try:
-            from sentence_transformers import util
-            emb1 = model.encode(student_answer, convert_to_tensor=True)
-            emb2 = model.encode(reference_text, convert_to_tensor=True)
-            semantic_score = float(util.cos_sim(emb1, emb2)[0][0])
+            # Re-use the already loaded model from the retriever
+            # We encode as list to get 2D tensor, then flatten to 1D
+            emb1 = embedder.encode([student_answer], convert_to_tensor=True)
+            emb2 = embedder.encode([reference_text], convert_to_tensor=True)
+            
+            # Simple cosine similarity on tensors
+            from torch.nn.functional import cosine_similarity
+            semantic_score = float(cosine_similarity(emb1.view(1, -1), emb2.view(1, -1))[0])
         except Exception as e:
-            print(f"[Detector] Semantic scoring failed: {e}")
+            print(f"[Detector] Shared semantic scoring failed: {e}")
 
     # ── 3. Blended Score ──
-    # We give more weight to semantic meaning (70%) than exact keyword matches (30%)
-    # This prevents 'injustice' when students use synonyms.
+    # 70% semantic meaning, 30% strict keywords
     score = (keyword_score * 0.3) + (max(0, semantic_score) * 0.7)
 
     missing = sorted(ref_words - student_words)

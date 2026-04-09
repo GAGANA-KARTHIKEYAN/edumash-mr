@@ -290,7 +290,8 @@ def evaluate_student_answer_full(
     flat_chunks, graph_ctx, seed_nodes = retriever.retrieve(question["concept"], k=3)
     ref_text = " ".join(flat_chunks)
 
-    misc_report = detect_misconceptions(student_answer, ref_text, seed_nodes)
+    # Pass the retriever.model (which is already loaded) to avoid redundant memory usage
+    misc_report = detect_misconceptions(student_answer, ref_text, seed_nodes, embedder=retriever.model)
     score = misc_report["score"]
     missing = misc_report["missing_concepts"]
     graph_missing = misc_report.get("graph_missing", [])
