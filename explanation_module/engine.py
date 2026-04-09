@@ -9,101 +9,102 @@ _groq_client  = None
 _gemini_model = None
 _active_provider = None   # 'groq' | 'gemini' | None
 _groq_model_override = None  # Persists fallback model across all calls in session
-
+_last_error = ""            # Tracks why the last call failed for UI feedback
 
 def configure_groq(api_key: str) -> bool:
-    global _groq_client, _active_provider
+    global _groq_client, _active_provider, _last_error
     try:
         from groq import Groq
         if not api_key or len(api_key.strip()) < 10:
+            _last_error = "Key too short (Invalid format)"
             return False
         _groq_client = Groq(api_key=api_key.strip())
         _active_provider = "groq"
-        print("[engine] Groq configured ✓ (llama-3.3-70b-versatile)")
+        print("[engine] Groq configured ✓")
         return True
     except Exception as e:
+        _last_error = f"Config Error: {str(e)}"
         print(f"[engine] Groq config failed: {e}")
         return False
 
 
 def configure_gemini(api_key: str) -> bool:
-    global _gemini_model, _active_provider
+    global _gemini_model, _active_provider, _last_error
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
-        _gemini_model = genai.GenerativeModel("gemini-2.0-flash")
+        _gemini_model = genai.GenerativeModel("gemini-1.5-flash")
         if _active_provider is None:
             _active_provider = "gemini"
         print("[engine] Gemini configured ✓")
         return True
     except Exception as e:
+        _last_error = f"Gemini Error: {str(e)}"
         print(f"[engine] Gemini config failed: {e}")
         return False
 
 
-def _llm(prompt: str, retries: int = 2) -> str | None:
+def _llm(prompt: str, retries: int = 1) -> str | None:
     """Call Groq first (with persistent model memory), fall back to Gemini, then offline."""
-    global _groq_model_override
+    global _groq_model_override, _last_error
     import time
-
-    # ── Debug Logging ──
-    with open("engine_debug.log", "a", encoding="utf-8") as f:
-        f.write(f"[engine] _llm called. groq_active={_groq_client is not None}, gemini_active={_gemini_model is not None}\n")
+    _last_error = "" # Reset
 
     # ── Try Groq ────────────────────────────────────────────────────
     if _groq_client is not None:
-        # Use the session-persisted fallback model if 70B was already rate-limited this session
-        current_model = _groq_model_override or "llama-3.3-70b-versatile"
-        for attempt in range(retries + 1):
-            try:
-                resp = _groq_client.chat.completions.create(
-                    model=current_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=8192,
-                    temperature=0.4,
-                )
-                text = resp.choices[0].message.content.strip()
-                with open("engine_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"[Groq] Success attempt={attempt} model={current_model}: {text[:80]}\n")
-                return text
-            except Exception as e:
-                err = str(e)
-                with open("engine_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"[Groq] attempt {attempt} failed: {err}\n")
-                if "rate" in err.lower() or "429" in err:
-                    if current_model != "llama-3.1-8b-instant":
-                        print(f"[engine] Groq 70B rate-limited. Permanently switching to 8b-instant for this session...")
-                        current_model = "llama-3.1-8b-instant"
-                        _groq_model_override = "llama-3.1-8b-instant"  # persist for all future calls
-                        time.sleep(0.5)
+        # Fallback chain: 3.3-70b -> 3.1-7b -> 70b-8192 -> 8b-instant
+        model_chain = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]
+        
+        # Start where we left off if a fallback was already triggered
+        start_idx = 0
+        if _groq_model_override in model_chain:
+            start_idx = model_chain.index(_groq_model_override)
+        
+        for model_idx in range(start_idx, len(model_chain)):
+            current_model = model_chain[model_idx]
+            for attempt in range(retries + 1):
+                try:
+                    resp = _groq_client.chat.completions.create(
+                        model=current_model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=8192,
+                        temperature=0.2,
+                    )
+                    text = resp.choices[0].message.content.strip()
+                    with open("engine_debug.log", "a", encoding="utf-8") as f:
+                        f.write(f"[Groq] Success model={current_model}: {text[:60]}...\n")
+                    return text
+                except Exception as e:
+                    err = str(e)
+                    _last_error = f"Groq ({current_model}): {err}"
+                    with open("engine_debug.log", "a", encoding="utf-8") as f:
+                        f.write(f"[Groq] {current_model} attempt {attempt} failed: {err}\n")
+                    
+                    if "rate" in err.lower() or "429" in err:
+                        time.sleep(1) # Tiny wait then try next model
+                        break # Try next model in chain
+                    elif "not_found" in err.lower() or "permission" in err.lower() or "model" in err.lower():
+                        break # Key doesn't have access to this model, try next one
                     else:
-                        print(f"[engine] Groq 8B also rate-limited. Trying Gemini...")
-                        break  # both models exhausted, skip to Gemini
-                else:
-                    break   # non-rate error, skip to Gemini
+                        # For other errors (authorization, etc.), don't just loop models, skip to Gemini
+                        break 
+            
+            # If we reached here, this model failed. Persist the NEXT model in the chain for future calls
+            if model_idx + 1 < len(model_chain):
+                _groq_model_override = model_chain[model_idx + 1]
 
     # ── Try Gemini fallback ─────────────────────────────────────────
     if _gemini_model is not None:
-        for attempt in range(retries):
+        for attempt in range(retries + 1):
             try:
                 resp = _gemini_model.generate_content(prompt)
-                with open("engine_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"[Gemini] Success attempt={attempt}: {resp.text[:80]}\n")
                 return resp.text.strip()
             except Exception as e:
-                err = str(e)
-                with open("engine_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"[Gemini] attempt {attempt} failed: {err}\n")
-                if "429" in err or "quota" in err.lower():
-                    wait = 20 * (attempt + 1)
-                    import streamlit as st
-                    st.warning(f"⏳ Gemini quota hit. Waiting {wait}s... (use Groq to avoid this!)")
-                    time.sleep(wait)
-                else:
-                    break
+                _last_error = f"Gemini Error: {str(e)}"
+                time.sleep(1)
 
     with open("engine_debug.log", "a", encoding="utf-8") as f:
-        f.write("[engine] Both providers failed. Offline fallback.\n")
+        f.write(f"[engine] All providers failed. Last Error: {_last_error}\n")
     return None
 
 def _parse_json(raw: str) -> dict | None:
@@ -398,27 +399,22 @@ CRITICAL FORMATTING RULE: The marker labels [SCORE], [WHAT YOU GOT RIGHT], [MISC
 
     # ── Offline fallback ─────────────────────────────────────────
     if score > 0.7:
-        label = "correct"
         praise = "You captured the key ideas well!"
     elif score > 0.4:
-        label = "partial"
         praise = "You have a partial understanding — good start!"
     else:
-        label = "needs work"
         praise = "This concept needs more attention."
 
+    # Use a descriptive error if available
+    err_ctx = f"\n\n*(⚠️ Fallback Mode. Reason: {_last_error or 'Connection failed'})*"
+    
     correction_base = flat_chunks[0][:400] if flat_chunks else "See your study material."
-
     missing_str = f"Missing: {', '.join(missing) or 'key details'}"
-    if missing_links:
-        missing_str += f". Also missing relationships: {', '.join(missing_links)}"
-    if wrong_connections:
-        missing_str += f". Warning! Incorrect relations: {', '.join(wrong_connections)}"
 
     return {
         "score"              : score,
         "is_correct"         : score > 0.6,
-        "what_student_got_right": praise + "\n\n*(⚠️ You are in Offline Fallback Mode. To receive the 1-Page comprehensive AI explanation in your selected language, please enter your Gemini API Key in the left sidebar!)*",
+        "what_student_got_right": praise + err_ctx,
         "what_is_missing"    : missing_str,
         "correction"         : correction_base,
         "followup_tip"       : f"Re-read the section on {question['concept']} in your notes.",
