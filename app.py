@@ -129,16 +129,16 @@ _init()
 # ── Auto-load API keys from Streamlit Cloud secrets ─────────────────
 if not st.session_state.get("groq_ok") and not st.session_state.get("gemini_ok"):
     try:
-        from explanation_module.engine import configure_groq, configure_gemini, _groq_client
+        import explanation_module.engine as engine
         _groq_secret = st.secrets.get("GROQ_API_KEY", "")
-        if _groq_secret and _groq_client is None:
-            if configure_groq(_groq_secret):
+        if _groq_secret and engine._groq_client is None:
+            if engine.configure_groq(_groq_secret):
                 st.session_state.groq_ok = True
                 st.session_state.gemini_ok = True
-        if _groq_client is None:
+        if engine._groq_client is None:
             _gemini_secret = st.secrets.get("GEMINI_API_KEY", "")
             if _gemini_secret:
-                if configure_gemini(_gemini_secret):
+                if engine.configure_gemini(_gemini_secret):
                     st.session_state.gemini_ok = True
     except Exception:
         pass  # Secrets not configured — user must enter key manually
@@ -167,9 +167,9 @@ with st.sidebar:
                              placeholder="Get free key at console.groq.com",
                              key="groq_key_input")
     # Check and re-sync engine if key exists but client was lost in worker restart
-    from explanation_module.engine import _groq_client, configure_groq
-    if groq_key and (_groq_client is None or not st.session_state.get("groq_ok")):
-        if configure_groq(groq_key):
+    import explanation_module.engine as engine
+    if groq_key and (engine._groq_client is None or not st.session_state.get("groq_ok")):
+        if engine.configure_groq(groq_key):
             st.session_state.groq_ok = True
             st.session_state.gemini_ok = True
             st.success("✅ Groq Active — No rate limits!")
@@ -367,9 +367,18 @@ if st.session_state.phase == "indexing":
             st.session_state.knowledge_graph_html = None
 
     with st.spinner("📖 Analysing curriculum topics…"):
-        from explanation_module.engine import generate_curriculum_summary
-        summary = generate_curriculum_summary(retriever, st.session_state.language)
+        import explanation_module.engine as engine
+        # Force sync before deep analysis to avoid "offline" status 
+        if st.session_state.get("groq_key_input") and engine._groq_client is None:
+            engine.configure_groq(st.session_state.groq_key_input)
+            
+        summary = engine.generate_curriculum_summary(retriever, st.session_state.language)
         st.session_state.curriculum_summary = summary
+        
+        # UI fix: if summary came back as offline but we expected it to be online, warns user
+        if summary.get("greeting", "").startswith("⚠️ [OFFLINE"):
+            if st.session_state.get("groq_ok"):
+                st.warning("⚠️ AI Analysis timed out or failed to parse. Using offline summary (Questions will still attempt AI analysis).")
 
     # Craft intro messages
     s = summary

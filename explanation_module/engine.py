@@ -46,6 +46,10 @@ def _llm(prompt: str, retries: int = 2) -> str | None:
     global _groq_model_override
     import time
 
+    # ── Debug Logging ──
+    with open("engine_debug.log", "a", encoding="utf-8") as f:
+        f.write(f"[engine] _llm called. groq_active={_groq_client is not None}, gemini_active={_gemini_model is not None}\n")
+
     # ── Try Groq ────────────────────────────────────────────────────
     if _groq_client is not None:
         # Use the session-persisted fallback model if 70B was already rate-limited this session
@@ -105,14 +109,27 @@ def _llm(prompt: str, retries: int = 2) -> str | None:
 def _parse_json(raw: str) -> dict | None:
     """Robustly extract JSON from LLM output, stripping markdown/conversational padding."""
     try:
-        # Find exactly the outermost JSON brackets to strip conversational padding
+        # 1. First, try to find text inside markdown fences if the LLM provided them
+        markdown_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+        if markdown_match:
+            try:
+                return json.loads(markdown_match.group(1).strip())
+            except:
+                pass
+        
+        # 2. Fall back to finding the outermost JSON brackets
         match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             clean_json = match.group(0)
             return json.loads(clean_json)
+            
+        # 3. Final attempt: direct load
         return json.loads(raw)
     except Exception as e:
+        with open("engine_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"[engine] JSON Parse Failed. Reason: {e} | Raw Start: {raw[:100]}\n")
         print(f"[engine] JSON Parse Failed. Reason: {e}")
+        return None
         with open("engine_debug.log", "a", encoding="utf-8") as f:
             f.write(f"[engine] JSON Parse Failed. Raw: {raw[:200]}\n")
         return None
