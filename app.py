@@ -129,13 +129,13 @@ _init()
 # ── Auto-load API keys from Streamlit Cloud secrets ─────────────────
 if not st.session_state.get("groq_ok") and not st.session_state.get("gemini_ok"):
     try:
-        from explanation_module.engine import configure_groq, configure_gemini
+        from explanation_module.engine import configure_groq, configure_gemini, _groq_client
         _groq_secret = st.secrets.get("GROQ_API_KEY", "")
-        if _groq_secret:
+        if _groq_secret and _groq_client is None:
             if configure_groq(_groq_secret):
                 st.session_state.groq_ok = True
                 st.session_state.gemini_ok = True
-        if not st.session_state.get("groq_ok"):
+        if _groq_client is None:
             _gemini_secret = st.secrets.get("GEMINI_API_KEY", "")
             if _gemini_secret:
                 if configure_gemini(_gemini_secret):
@@ -166,12 +166,13 @@ with st.sidebar:
     groq_key = st.text_input("🟢 Groq API Key (Recommended)", type="password",
                              placeholder="Get free key at console.groq.com",
                              key="groq_key_input")
-    if groq_key and not st.session_state.get("groq_ok"):
-        from explanation_module.engine import configure_groq
+    # Check and re-sync engine if key exists but client was lost in worker restart
+    from explanation_module.engine import _groq_client, configure_groq
+    if groq_key and (_groq_client is None or not st.session_state.get("groq_ok")):
         if configure_groq(groq_key):
             st.session_state.groq_ok = True
-            st.session_state.gemini_ok = True  # mark as AI-active
-            st.success("✅ Groq Active (llama-3.3-70b) — No rate limits!")
+            st.session_state.gemini_ok = True
+            st.success("✅ Groq Active — No rate limits!")
         else:
             st.error("❌ Invalid Groq key")
     elif st.session_state.get("groq_ok"):
