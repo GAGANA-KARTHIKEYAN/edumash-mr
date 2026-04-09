@@ -55,7 +55,7 @@ def _llm(prompt: str, retries: int = 2) -> str | None:
                 resp = _groq_client.chat.completions.create(
                     model=current_model,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=2048,
+                    max_tokens=8192,
                     temperature=0.4,
                 )
                 text = resp.choices[0].message.content.strip()

@@ -126,6 +126,23 @@ def _init():
 
 _init()
 
+# ── Auto-load API keys from Streamlit Cloud secrets ─────────────────
+if not st.session_state.get("groq_ok") and not st.session_state.get("gemini_ok"):
+    try:
+        from explanation_module.engine import configure_groq, configure_gemini
+        _groq_secret = st.secrets.get("GROQ_API_KEY", "")
+        if _groq_secret:
+            if configure_groq(_groq_secret):
+                st.session_state.groq_ok = True
+                st.session_state.gemini_ok = True
+        if not st.session_state.get("groq_ok"):
+            _gemini_secret = st.secrets.get("GEMINI_API_KEY", "")
+            if _gemini_secret:
+                if configure_gemini(_gemini_secret):
+                    st.session_state.gemini_ok = True
+    except Exception:
+        pass  # Secrets not configured — user must enter key manually
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Helper: add a message to the chat history
@@ -323,7 +340,7 @@ if st.session_state.phase == "upload":
 # ═══════════════════════════════════════════════════════════════════
 if st.session_state.phase == "indexing":
     with st.spinner("🔧 Building Graph RAG index from your curriculum…"):
-        from main import build_system
+        from core import build_system
         try:
             retriever = build_system()
             st.session_state.retriever = retriever
