@@ -52,14 +52,18 @@ RELATION_PATTERNS = [
 
 # Extended stop words: functional verbs, generic academic filler, and noisy fragments
 STOP_WORDS = {
-    "the", "a", "an", "is", "of", "in", "to", "and", "or", "it", "this", "that", "which",
-    "with", "from", "by", "on", "at", "are", "was", "were", "be", "been", "has", "have",
-    "had", "do", "does", "can", "will", "as", "for", "but", "not", "its", "also", "more",
-    "into", "than", "their", "they", "these", "those", "such", "each", "would", "should",
-    "could", "about", "between", "through", "where", "when", "how", "what", "there",
-    "uses", "provides", "provides", "shows", "described", "discussed", "within", "without",
+    "the", "a", "an", "is", "of", "in", "to", "and", "or", "it", "this",
+    "that", "which", "with", "from", "by", "on", "at", "are", "was", "were",
+    "be", "been", "has", "have", "had", "do", "does", "can", "will", "as",
+    "for", "but", "not", "its", "also", "more", "into", "than", "their",
+    "they", "these", "those", "such", "each", "would", "should", "could",
+    "about", "between", "through", "where", "when", "how", "what", "there",
+    "too", "faster", "slower", "better", "worse", "higher", "lower", "less",
+    "more", "much", "many", "very", "most", "only", "well", "your", "mine",
+    "our", "them", "both", "all", "any", "some", "each", "every", "other",
+    "uses", "provides", "shows", "described", "discussed", "within", "without",
     "using", "given", "during", "across", "along", "after", "before", "while", "though",
-    "your", "our", "their", "its", "decides", "performs", "refers", "means", "consists"
+    "decides", "performs", "refers", "means", "consists"
 }
 
 
