@@ -50,3 +50,5 @@ desktop.ini
 *.env
 secrets.py
 config_local.py
+*.zip
+ffmpeg.exe

@@ -8,6 +8,7 @@ import os, json, re, random
 _groq_client  = None
 _gemini_model = None
 _active_provider = None   # 'groq' | 'gemini' | None
+_groq_model_override = None  # Persists fallback model across all calls in session
 
 
 def configure_groq(api_key: str) -> bool:
@@ -41,31 +42,39 @@ def configure_gemini(api_key: str) -> bool:
 
 
 def _llm(prompt: str, retries: int = 2) -> str | None:
-    """Call Groq first, fall back to Gemini, then offline."""
+    """Call Groq first (with persistent model memory), fall back to Gemini, then offline."""
+    global _groq_model_override
     import time
 
     # ── Try Groq ────────────────────────────────────────────────────
     if _groq_client is not None:
-        for attempt in range(retries):
+        # Use the session-persisted fallback model if 70B was already rate-limited this session
+        current_model = _groq_model_override or "llama-3.3-70b-versatile"
+        for attempt in range(retries + 1):
             try:
                 resp = _groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=current_model,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=4096,
+                    max_tokens=2048,
                     temperature=0.4,
                 )
                 text = resp.choices[0].message.content.strip()
                 with open("engine_debug.log", "a", encoding="utf-8") as f:
-                    f.write(f"[Groq] Success attempt={attempt}: {text[:80]}\n")
+                    f.write(f"[Groq] Success attempt={attempt} model={current_model}: {text[:80]}\n")
                 return text
             except Exception as e:
                 err = str(e)
                 with open("engine_debug.log", "a", encoding="utf-8") as f:
                     f.write(f"[Groq] attempt {attempt} failed: {err}\n")
                 if "rate" in err.lower() or "429" in err:
-                    wait = 10 * (attempt + 1)
-                    print(f"[engine] Groq rate limit. Waiting {wait}s...")
-                    time.sleep(wait)
+                    if current_model != "llama-3.1-8b-instant":
+                        print(f"[engine] Groq 70B rate-limited. Permanently switching to 8b-instant for this session...")
+                        current_model = "llama-3.1-8b-instant"
+                        _groq_model_override = "llama-3.1-8b-instant"  # persist for all future calls
+                        time.sleep(0.5)
+                    else:
+                        print(f"[engine] Groq 8B also rate-limited. Trying Gemini...")
+                        break  # both models exhausted, skip to Gemini
                 else:
                     break   # non-rate error, skip to Gemini
 
@@ -288,18 +297,19 @@ CURRICULUM REFERENCE (Ground Truth): {ref_text[:1200]}
 
 STRUCTURAL ANALYSIS FROM AI MODEL:
 {misconception_summary if misconception_summary else "No major structural gaps detected."}
+BASE SEMANTIC MATCH SCORE: {score:.2f} (0.0 means completely wrong/irrelevant, 1.0 means perfect. Anchor your evaluation around this score.)
 
 LANGUAGE FOR YOUR RESPONSE: {language}
 
-Your task: Write an extremely detailed, university-grade evaluation. Each section MUST be at least 3-4 full paragraphs long (think of a full page of A4 paper per section). Do NOT be brief.
+Your task: Write a detailed, university-grade evaluation. Do NOT hallucinate praise if the student's answer is trivial or completely wrong. If the base semantic score is low (<0.3), be strict.
 
 Format your response using EXACTLY these markers (do not change the markers):
 
 [SCORE]
-<a float between 0.0 and 1.0 only, e.g. 0.65>
+<a float between 0.0 and 1.0 only based strictly on accuracy, e.g. 0.15 for bad answers, 0.95 for excellent>
 
 [WHAT YOU GOT RIGHT]
-<Write 3-4 detailed paragraphs celebrating exactly what the student understood correctly, with detailed explanation of WHY those points are correct, referencing specifics from the curriculum.>
+<If the answer is completely wrong or trivial, just write "Nothing was correct." Otherwise, write 1-2 paragraphs celebrating exactly what the student understood correctly.>
 
 [MISCONCEPTION IDENTIFIED]
 <First, state the exact name of the misconception or gap in 1 sentence. Then write 3-4 paragraphs deeply explaining: (1) what the specific misconception IS, (2) WHY the student might have formed this misunderstanding (cognitive/conceptual root cause), (3) what incorrect mental model they are using, (4) how this misconception differs from the actual correct understanding.>
@@ -310,13 +320,16 @@ Format your response using EXACTLY these markers (do not change the markers):
 [FOLLOW UP QUESTION]
 <One deep, Socratic follow-up question to extend thinking.>
 
-Write ALL text (except the marker labels) in {language}. Be thorough. Do not skip any section.
+CRITICAL FORMATTING RULE: The marker labels [SCORE], [WHAT YOU GOT RIGHT], [MISCONCEPTION IDENTIFIED], [CORRECT EXPLANATION], [FOLLOW UP QUESTION] MUST remain exactly in English. Do NOT translate them. Only the content inside each section should be in {language}. Be thorough. Do not skip any section.
 """
     raw = _llm(prompt)
     if raw:
         def _extract(marker_start, marker_end, text):
-            """Extract text between two markers."""
-            pattern = rf'\[{re.escape(marker_start)}\]\s*(.*?)\s*(?=\[{re.escape(marker_end)}\]|\Z)'
+            """Extract text between two markers, tolerating missing brackets or markdown bold asterisks from the 8b model."""
+            # Match optional [, optional **, the marker, optional **, optional ], optional :
+            start_p = rf"\[?\*{{0,2}}{re.escape(marker_start)}\*{{0,2}}\]?\:?"
+            end_p = rf"\[?\*{{0,2}}{re.escape(marker_end)}\*{{0,2}}\]?\:?"
+            pattern = rf'{start_p}\s*(.*?)\s*(?={end_p}|\Z)'
             m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
             return m.group(1).strip() if m else ""
 
@@ -333,16 +346,22 @@ Write ALL text (except the marker labels) in {language}. Be thorough. Do not ski
         except Exception:
             llm_score = score
 
-        if praise or correction:   # at least one section landed
-            what_missing = misconception if misconception else (
-                f"Missing concepts: {', '.join(missing)}" if missing else "See the correct explanation below."
-            )
-            return {
-                "score"               : llm_score,
-                "is_correct"          : llm_score > 0.6,
-                "what_student_got_right": praise or "Good attempt! See the detailed analysis below.",
-                "what_is_missing"     : what_missing,
-                "correction"          : correction or "See curriculum reference.",
+        # If formal section parsing fails completely on a smaller model, salvage the raw generation context
+        if not praise and not correction:
+            praise_clean = raw.replace("[SCORE]", "").replace(score_raw, "").strip()
+            praise = praise_clean if len(praise_clean) > 20 else "Good attempt!"
+            correction = "AI generated unstructured feedback; see above."
+            
+        what_missing = misconception if misconception else (
+            f"Missing concepts: {', '.join(missing)}" if missing else "See the correct explanation below."
+        )
+
+        return {
+            "score"               : llm_score,
+            "is_correct"          : llm_score > 0.6,
+            "what_student_got_right": praise,
+            "what_is_missing"     : what_missing,
+            "correction"          : correction,
                 "followup_tip"        : followup or f"Re-read the section on {question['concept']}.",
                 "encouragement"       : "Keep going — every answer makes you stronger! 🌱",
                 "missing_concepts"    : missing,

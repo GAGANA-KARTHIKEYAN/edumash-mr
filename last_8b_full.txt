@@ -1,0 +1,11 @@
+ Success attempt=1 model=llama-3.1-8b-instant: [SCORE]
+0.85
+
+[WHAT YOU GOT RIGHT]
+
+Your answer demonstrates a clear understandi
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.

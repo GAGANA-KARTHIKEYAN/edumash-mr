@@ -10,15 +10,42 @@ def _load_whisper():
     if _whisper is not None:
         return _whisper
     try:
-        import openai_whisper as w
+        import whisper as w
         _whisper = w.load_model("tiny")
-        print("[input] Whisper loaded ✓")
-    except Exception:
+        print("[input] Local Whisper loaded ✓")
+    except Exception as e:
+        print(f"[input] Failed to load local whisper: {e}")
         pass
     return _whisper
 
 
 def transcribe_audio(audio_path: str) -> str:
+    # Attempt 1: Ultra-fast Groq API Transcription
+    try:
+        from explanation_module.engine import _groq_client
+        if _groq_client is not None:
+            print("[input] Sending audio to Groq Whisper API...")
+            with open(audio_path, "rb") as file:
+                transcription = _groq_client.audio.transcriptions.create(
+                    file=(os.path.basename(audio_path), file.read()),
+                    model="whisper-large-v3-turbo",
+                    prompt="Student answering a curriculum question.",
+                    response_format="text",
+                    temperature=0.0
+                )
+            
+            # Anti-hallucination for silent audio files
+            clean_text = transcription.strip().lower()
+            hallucinations = ["thank you.", "thank you", "thanks for watching", "thanks for watching.", "please subscribe"]
+            if clean_text in hallucinations:
+                print(f"[input] Filtered Whisper silence hallucination: '{transcription.strip()}'")
+                return ""
+                
+            return transcription
+    except Exception as e:
+        print(f"[input] Groq Whisper failed, falling back to local: {e}")
+
+    # Attempt 2: Local CPU Transcription Fallback
     model = _load_whisper()
     if model is None:
         return ""
@@ -26,7 +53,7 @@ def transcribe_audio(audio_path: str) -> str:
         result = model.transcribe(audio_path)
         return result.get("text", "")
     except Exception as e:
-        print(f"[input] Audio transcription failed: {e}")
+        print(f"[input] Local audio transcription failed: {e}")
         return ""
 
 
@@ -67,5 +94,5 @@ def get_input(
     if text and text.strip():
         return text.strip()
 
-    # Fall back to CLI
-    return input("Enter student answer: ").strip()
+    # No valid input found
+    return ""

@@ -17,8 +17,71 @@ st.set_page_config(
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');
 
 * { font-family: 'Inter', sans-serif !important; }
+
+/* ── Fix: Material Symbols font icons render correctly ───────────── */
+.material-symbols-rounded {
+    font-family: 'Material Symbols Rounded' !important;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+/* Suppress raw icon-name text that renders when font hasn't loaded */
+[data-testid="stExpanderToggleIcon"] svg,
+[data-testid="stExpanderChevron"] { display: inline-flex !important; }
+
+/* Hide the raw text fallback for any Streamlit icon span */
+span[data-testid*="Icon"] { 
+    font-size: 0 !important; 
+    line-height: 0 !important;
+}
+span[data-testid*="Icon"]::before {
+    font-size: 1rem !important;
+    line-height: 1.4 !important;
+}
+
+/* ── Fix 1: File uploader "uploadUpload" double text bug ─────────── */
+/* Streamlit renders a hidden span + visible button text — hide the ghost */
+[data-testid="stFileUploader"] button span:first-child {
+    display: none !important;
+}
+[data-testid="stFileUploader"] button::before {
+    content: "Browse files";
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.85rem;
+}
+
+/* ── Fix 2: Material icon names showing as raw text ──────────────── */
+/* Strip any raw icon-name text leaking into labels */
+[data-testid="stWidgetLabel"] p,
+[data-testid="stSidebarContent"] label p,
+.stTextInput label p,
+.stSelectbox label p {
+    font-size: 0.875rem !important;
+    line-height: 1.4 !important;
+    overflow: hidden !important;
+}
+
+/* ── Fix 3: RAG context expander label overlap ───────────────────── */
+[data-testid="stExpander"] summary p {
+    font-size: 0.875rem !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Fix 4: Sidebar icon/label stacking ─────────────────────────── */
+[data-testid="stSidebarContent"] .stMarkdown p {
+    margin-bottom: 0.25rem !important;
+    line-height: 1.5 !important;
+}
+
+/* ── Fix 5: Audio recorder label overlap ─────────────────────────── */
+[data-testid="stAudioInput"] label {
+    display: block !important;
+    overflow: visible !important;
+    white-space: normal !important;
+}
 
 /* Score pill - theme agnostic */
 .pill {
@@ -30,6 +93,7 @@ st.markdown("""
 .pill-red    { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Session State Initialization
@@ -116,10 +180,11 @@ with st.sidebar:
 
 
     # ── Multilingual Mode ──────────────────────────────────────
+    _LANGS = ["English", "Spanish", "French", "Hindi", "Telugu", "Kannada", "Chinese", "Arabic", "German", "Japanese"]
     selected_lang = st.selectbox(
         "🌐 Language",
-        ["English", "Spanish", "French", "Hindi", "Chinese", "Arabic", "German", "Japanese"],
-        index=["English", "Spanish", "French", "Hindi", "Chinese", "Arabic", "German", "Japanese"].index(st.session_state.language) if st.session_state.language in ["English", "Spanish", "French", "Hindi", "Chinese", "Arabic", "German", "Japanese"] else 0
+        _LANGS,
+        index=_LANGS.index(st.session_state.language) if st.session_state.language in _LANGS else 0
     )
     if selected_lang != st.session_state.language:
         st.session_state.language = selected_lang
@@ -447,23 +512,32 @@ if st.session_state.phase == "quiz":
         st.rerun()
 
     # Multimodal Input Options
+    # Multimodal Input Options
+    st.markdown("### 🗣️ Multimodal Answer Options")
     col1, col2 = st.columns(2)
+    
     with col1:
-        img_upload = st.file_uploader("📷 Upload handwritten answer (Image)", type=["png", "jpg", "jpeg"], key="img_upload")
+        img_upload = st.file_uploader("📷 Upload handwritten notes (Image)", type=["png", "jpg", "jpeg"], key="img_upload")
+    
     with col2:
-        audio_upload = st.file_uploader("🎙️ Upload voice answer (Audio)", type=["wav", "mp3", "m4a"], key="audio_upload")
+        tab_mic, tab_up = st.tabs(["🎙️ Record Voice", "📁 Upload Audio File"])
+        with tab_mic:
+            audio_record = st.audio_input("Speak your answer natively", key="audio_record")
+        with tab_up:
+            audio_upload = st.file_uploader("Upload pre-recorded audio", type=["wav", "mp3", "m4a"], key="audio_upload")
 
     # Final answer parsing
     from input_module.input_handler import get_input
 
     # Check for text chat input
     chat_val = st.chat_input(
-        f"Answer Q{st.session_state.question_count + 1}/{st.session_state.total_questions} — Type, upload image, or upload audio!"
+        f"Answer Q{st.session_state.question_count + 1}/{st.session_state.total_questions} — Type, upload image, or upload/record audio!"
     )
     
     # Check for explicit 'Submit Media' intent (to prevent auto-fire on just opening file dialog)
     media_submit = False
-    if (img_upload or audio_upload) and st.button("🚀 Submit Media Answer", type="primary"):
+    active_audio = audio_record if audio_record else audio_upload
+    if (img_upload or active_audio) and st.button("🚀 Submit Media Answer", type="primary"):
         media_submit = True
 
     if (chat_val or media_submit) and st.session_state.awaiting_answer:
@@ -478,16 +552,23 @@ if st.session_state.phase == "quiz":
             with open(img_path, "wb") as f:
                 f.write(img_upload.getbuffer())
         
-        if audio_upload:
-            audio_path = f"data/temp_{audio_upload.name}"
+        if active_audio:
+            audio_path = f"data/temp_audio.wav"
             with open(audio_path, "wb") as f:
-                f.write(audio_upload.getbuffer())
+                f.write(active_audio.getbuffer())
 
         with st.spinner("🎙️📷 Processing multimodal input..."):
             answer = get_input(text=chat_val, audio_path=audio_path, image_path=img_path)
             
         if not answer:
             st.warning("⚠️ Could not extract text from your input. Please try again.")
+            st.stop()
+
+        # ── Minimum answer quality guard ──────────────────────────────
+        _trivial = {"idk", "i don't know", "i dont know", "no idea", "dunno", 
+                    "nothing", "not sure", "?", "...", "n/a", "na", "skip"}
+        if len(answer.strip()) < 15 or answer.strip().lower() in _trivial:
+            st.warning("✏️ Please write at least a sentence explaining your understanding — even a partial answer helps you learn!")
             st.stop()
             
         # Clean up temp files

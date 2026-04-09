@@ -1,0 +1,18 @@
+ Success attempt=1 model=llama-3.1-8b-instant: {
+  "question": "How do the RSU agents, which only observe their local state, ma
+
+========
+ attempt 0 failed: Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in organization `org_01kh3kpjnnf6tvh8fbganb99t6` service tier `on_demand` on tokens per day (TPD): Limit 100000, Used 98170, Requested 4924. Please try again in 44m33.216s. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}
+
+========
+ Success attempt=1 model=llama-3.1-8b-instant: [SCORE]
+0.85
+
+[WHAT YOU GOT RIGHT]
+
+Your answer demonstrates a clear understandi
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.
+[engine] Both providers failed. Offline fallback.

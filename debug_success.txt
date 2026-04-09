@@ -1,0 +1,7 @@
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: {
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: {
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: [SCORE]
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: {
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: {
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: {
+[Groq] Success attempt=1 model=llama-3.1-8b-instant: [SCORE]
