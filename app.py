@@ -177,6 +177,20 @@ with st.sidebar:
             st.error("❌ Invalid Groq key")
     elif st.session_state.get("groq_ok"):
         st.success("✅ Groq Active — No rate limits!")
+    
+    # NEW: Refresh Summary if we just went Online (Fixes the "Sticky Offline" issue)
+    if st.session_state.messages and "[OFFLINE MODE]" in st.session_state.messages[0]["content"]:
+        if st.button("✨ Upgrade Curriculum with AI", use_container_width=True, type="primary"):
+            with st.spinner("🧠 Upgrading your experience with AI analysis..."):
+                from explanation_module.engine import generate_curriculum_summary
+                new_summary = generate_curriculum_summary(st.session_state.retriever, st.session_state.language)
+                
+                # Replace the first message content with rich AI summary
+                topics_str = "  \n".join([f"• {t}" for t in new_summary.get("topics", [])])
+                st.session_state.messages[0]["content"] = f"""👋 **Hello, {st.session_state.student_name}!**\n\n{new_summary.get("greeting", "")}\n\n**Topics I found in your material:**\n{topics_str}\n\nI identified **{new_summary.get("concept_count", "many")} concepts** in your graph.\n\n{new_summary.get("encouragement", "")}\n\n---\n**AI Analysis is now active!** Your next questions will be significantly more accurate."""
+                st.rerun()
+
+    st.markdown("---")
 
     # Gemini (fallback)
     with st.expander("🔵 Gemini API Key (optional fallback)"):

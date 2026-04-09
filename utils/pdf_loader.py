@@ -14,6 +14,19 @@ def _Document(page_content, metadata):
     return Document(page_content=page_content, metadata=metadata)
 
 
+def _clean_extracted_text(text: str) -> str:
+    """Fix common PDF extraction artifacts."""
+    # 1. Join hyphenated words broken across lines
+    text = re.sub(r"(\w+)-\s*\n\s*(\w+)", r"\1\2", text)
+    # 2. Fix multiple spaces/newlines
+    text = re.sub(r"\s+", " ", text)
+    # 3. Fix common mangled words (e.g. Lpus -> ALUs)
+    text = re.sub(r"\bLpus\b", "ALUs", text, flags=re.IGNORECASE)
+    # 4. Remove standalone artifacts like "page 1 of 5" or "figure 2"
+    text = re.sub(r"Page \d+ of \d+", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 def _is_truly_junk(text: str) -> bool:
     """
     Only block text that is TRULY unreadable:
@@ -47,7 +60,8 @@ def load_pdf(path: str):
         import pdfplumber
         with pdfplumber.open(path) as pdf:
             for i, page in enumerate(pdf.pages):
-                text = page.extract_text(x_tolerance=2, y_tolerance=3) or ""
+                raw_text = page.extract_text(x_tolerance=2, y_tolerance=3) or ""
+                text = _clean_extracted_text(raw_text)
                 if text.strip():
                     docs.append(_Document(page_content=text, metadata={"source": path, "page": i}))
         print(f"[pdf_loader] pdfplumber: {len(docs)} page(s) from {os.path.basename(path)}")

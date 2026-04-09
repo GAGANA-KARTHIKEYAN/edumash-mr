@@ -64,19 +64,34 @@ STOP_WORDS = {
 
 
 def _clean(text: str) -> str:
-    """Clean node labels and filter out low-value terms."""
+    """Clean node labels and filter out low-value terms aggressively."""
+    # 1. Basic normalization
     text = text.strip().lower()
     text = re.sub(r"\s+", " ", text)
-    # Remove fragments and symbols
-    text = re.sub(r"[^\w\s]", "", text)
+    text = re.sub(r"[^\w\s]", "", text) # Remove symbols
     
-    words = [w for w in text.split() if w not in STOP_WORDS]
+    # 2. Linguistic Pruning: Remove leading/trailing fragments often caught by regex
+    # e.g., "than faster" -> "faster", "the system" -> "system"
+    words = text.split()
+    while words and (words[0] in STOP_WORDS or len(words[0]) < 2):
+        words.pop(0)
+    while words and (words[-1] in STOP_WORDS or len(words[-1]) < 2):
+        words.pop(-1)
+        
     cleaned = " ".join(words).strip()
     
-    # Pruning: Reject if empty, or just a tiny common word
-    if not cleaned or len(cleaned) < 3 or cleaned in STOP_WORDS:
+    # 3. Quality Sanity Check
+    # Reject if: empty, too short, only common words, or looks like a mangled PDF fragment (e.g. 'lpus')
+    if not cleaned or len(cleaned) < 4:
         return ""
-    return cleaned[:50]
+    if cleaned in STOP_WORDS:
+        return ""
+    
+    # If the word has no vowels and isn't a known acronym, it's likely noise (like 'lpus' often is)
+    if not any(v in cleaned for v in "aeiouy") and not cleaned.isupper():
+        return ""
+
+    return cleaned.title()[:50] # Camel Case looks more professional
 
 
 def extract_triples(text: str) -> List[Tuple[str, str, str]]:
