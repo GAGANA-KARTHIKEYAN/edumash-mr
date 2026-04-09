@@ -232,30 +232,27 @@ def generate_next_question(
     flat_chunks, graph_ctx, _ = retriever.retrieve(target_concept, k=2)
     context = " ".join(flat_chunks)[:600]
 
-    # LLM question generation
+    # LLM question generation (Optimized for Technical Depth & Speed)
     prompt = f"""
-You are a Socratic educational tutor. Generate ONE clear, thought-provoking question
-for a student about the concept "{target_concept}".
+You are a technical tutor. Ask ONE specialized question about "{target_concept}" using the context below.
 
-Curriculum context: {context}
+CONTEXT:
+{context}
 
-Student's weak areas so far: {", ".join(weak) or "none yet"}
-Question number: {question_number} of 5
+RULES:
+1. NO general philosophy or "how do you feel" questions.
+2. Be technical and concrete.
+3. Keep it to 1 concise sentence.
 
-Rules:
-- Do NOT give the answer in the question
-- Ask for explanation/understanding, not just yes/no
-- Be conversational and encouraging
-- Keep it to 1-2 sentences
-
-Respond as JSON:
+Student Progress: Q{question_number}/5.
+Respond with ONLY this JSON:
 {{
-  "question": "the question text",
+  "question": "The technical question text...",
   "concept": "{target_concept}",
-  "difficulty": "easy|medium|hard",
+  "difficulty": "medium"
 }}
-IMPORTANT: You MUST write the "question" and "hint_if_stuck" strictly in {language}! The concept can stay in English if it's a technical term.
-Only output JSON, no fences.
+IMPORTANT: Write the "question" strictly in {language}.
+Only output raw JSON. No fences.
 """
     raw = _llm(prompt)
     if raw:
