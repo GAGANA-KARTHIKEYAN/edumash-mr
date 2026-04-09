@@ -50,15 +50,33 @@ RELATION_PATTERNS = [
     (r"([A-Za-z][\w\s]{2,40}?)\s+belongs?\s+to\s+([\w\s]{2,40}?)(?:\.|,|;|$)", "BELONGS_TO"),
 ]
 
-STOP_WORDS = {"the", "a", "an", "is", "of", "in", "to", "and", "or", "it",
-              "this", "that", "which", "with", "from", "by", "on", "at"}
+# Extended stop words: functional verbs, generic academic filler, and noisy fragments
+STOP_WORDS = {
+    "the", "a", "an", "is", "of", "in", "to", "and", "or", "it", "this", "that", "which",
+    "with", "from", "by", "on", "at", "are", "was", "were", "be", "been", "has", "have",
+    "had", "do", "does", "can", "will", "as", "for", "but", "not", "its", "also", "more",
+    "into", "than", "their", "they", "these", "those", "such", "each", "would", "should",
+    "could", "about", "between", "through", "where", "when", "how", "what", "there",
+    "uses", "provides", "provides", "shows", "described", "discussed", "within", "without",
+    "using", "given", "during", "across", "along", "after", "before", "while", "though",
+    "your", "our", "their", "its", "decides", "performs", "refers", "means", "consists"
+}
 
 
 def _clean(text: str) -> str:
+    """Clean node labels and filter out low-value terms."""
     text = text.strip().lower()
     text = re.sub(r"\s+", " ", text)
+    # Remove fragments and symbols
+    text = re.sub(r"[^\w\s]", "", text)
+    
     words = [w for w in text.split() if w not in STOP_WORDS]
-    return " ".join(words)[:50]          # cap node label length
+    cleaned = " ".join(words).strip()
+    
+    # Pruning: Reject if empty, or just a tiny common word
+    if not cleaned or len(cleaned) < 3 or cleaned in STOP_WORDS:
+        return ""
+    return cleaned[:50]
 
 
 def extract_triples(text: str) -> List[Tuple[str, str, str]]:

@@ -318,7 +318,12 @@ BASE SEMANTIC MATCH SCORE: {score:.2f} (0.0 means completely wrong/irrelevant, 1
 
 LANGUAGE FOR YOUR RESPONSE: {language}
 
-Your task: Write a detailed, university-grade evaluation. Do NOT hallucinate praise if the student's answer is trivial or completely wrong. If the base semantic score is low (<0.3), be strict.
+Your task: Write a detailed, university-grade evaluation. 
+
+IMPORTANT GUIDELINES:
+1. **Holistic Reasoning:** The BASE SEMANTIC MATCH SCORE is a guide. If the score is low but the student is clearly using technical terminology correctly (even with different phrasing), trust your pedagogical reasoning and give a higher [SCORE] in your section.
+2. **No Hallucinated Criticism:** Do NOT invent misconceptions or gaps if the student's answer is technically sound. If they hit the key points, celebrate it.
+3. **Consistency:** Ensure your 'Correct Explanation' aligns with standard smart city/MARL theory (prioritizing decentralized coordination where appropriate).
 
 Format your response using EXACTLY these markers (do not change the markers):
 

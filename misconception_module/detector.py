@@ -63,8 +63,28 @@ def detect_misconceptions(
             "student_triplets": [], "ref_triplets": [],
         }
 
+    # ── 1. Keyword Overlap (Structural) ──
+    match_count = len(student_words & ref_words)
+    keyword_score = match_count / len(ref_words)
+
+    # ── 2. Semantic Similarity (Meaning-based) ──
+    semantic_score = keyword_score # Default fallback
+    try:
+        from sentence_transformers import SentenceTransformer, util
+        # This model is lightweight and already downloaded for RAG
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        emb1 = model.encode(student_answer, convert_to_tensor=True)
+        emb2 = model.encode(reference_text, convert_to_tensor=True)
+        semantic_score = float(util.cos_sim(emb1, emb2)[0][0])
+    except Exception as e:
+        print(f"[Detector] Semantic scoring unavailable: {e}")
+
+    # ── 3. Blended Score ──
+    # We give more weight to semantic meaning (70%) than exact keyword matches (30%)
+    # This prevents 'injustice' when students use synonyms.
+    score = (keyword_score * 0.3) + (max(0, semantic_score) * 0.7)
+
     missing = sorted(ref_words - student_words)
-    score   = len(student_words & ref_words) / len(ref_words)
 
     # ── Graph node keyword analysis (always runs) ──
     wrong_connections = []
