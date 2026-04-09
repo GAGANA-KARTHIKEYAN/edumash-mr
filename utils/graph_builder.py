@@ -142,6 +142,34 @@ def build_graph(documents) -> nx.DiGraph:
     return G
 
 
+def prune_graph(G: nx.DiGraph) -> nx.DiGraph:
+    """
+    Retroactively clean an existing graph. 
+    Removes noisy fragments and remaps nodes to their cleaned versions.
+    """
+    nodes_to_remove = []
+    mapping = {}
+    
+    # We must use a list of nodes because we might modify the graph shape
+    for node in list(G.nodes()):
+        cleaned = _clean(node)
+        if not cleaned:
+            nodes_to_remove.append(node)
+        elif cleaned != node:
+            mapping[node] = cleaned
+            
+    # Apply mapping (merges nodes if they clean to the same thing)
+    if mapping:
+        import networkx as nx
+        nx.relabel_nodes(G, mapping, copy=False)
+        
+    # Remove junk
+    G.remove_nodes_from(nodes_to_remove)
+    
+    print(f"[graph_builder] Pruned graph. Removed {len(nodes_to_remove)} junk nodes. Remapped {len(mapping)} nodes.")
+    return G
+
+
 def get_subgraph(G: nx.DiGraph, seed_nodes: List[str], hops: int = 2) -> nx.DiGraph:
     """
     Extract a neighbourhood subgraph around seed_nodes (BFS up to `hops`).

@@ -52,10 +52,16 @@ def _llm(prompt: str, retries: int = 1) -> str | None:
 
     # ── Try Groq ────────────────────────────────────────────────────
     if _groq_client is not None:
-        # Fallback chain: 3.3-70b -> 3.1-7b -> 70b-8192 -> 8b-instant
-        model_chain = ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]
+        # Priority Chain: Try 70B models, then immediately fall back to 8B models which are always available.
+        # This prevents "Offline Mode" when a user doesn't have 70B access.
+        model_chain = [
+            "llama-3.1-8b-instant",       # Fastest & Highest Availability
+            "llama3-8b-8192",            # Reliable Fallback
+            "llama-3.3-70b-versatile",    # Premium (requires specific account status)
+            "llama-3.1-70b-versatile"     # Premium (legacy)
+        ]
         
-        # Start where we left off if a fallback was already triggered
+        # If we already found a working model in a previous turn, use it.
         start_idx = 0
         if _groq_model_override in model_chain:
             start_idx = model_chain.index(_groq_model_override)
@@ -67,10 +73,12 @@ def _llm(prompt: str, retries: int = 1) -> str | None:
                     resp = _groq_client.chat.completions.create(
                         model=current_model,
                         messages=[{"role": "user", "content": prompt}],
-                        max_tokens=8192,
-                        temperature=0.2,
+                        max_tokens=4096,
+                        temperature=0.1,
                     )
                     text = resp.choices[0].message.content.strip()
+                    # Success! Persist this model for the rest of the session
+                    _groq_model_override = current_model
                     with open("engine_debug.log", "a", encoding="utf-8") as f:
                         f.write(f"[Groq] Success model={current_model}: {text[:60]}...\n")
                     return text
