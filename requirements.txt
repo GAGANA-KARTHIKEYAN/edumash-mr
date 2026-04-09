@@ -32,3 +32,5 @@ datasets
 peft
 accelerate
 pyvis
+# Fix for possible pydantic v2 conflicts in older Streamlit environments
+pydantic<2
