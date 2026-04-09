@@ -1,3 +1,5 @@
 tesseract-ocr
 ffmpeg
-libgl1-mesa-glx
+libgl1
+build-essential
+python3-dev
