@@ -384,16 +384,16 @@ CRITICAL FORMATTING RULE: The marker labels [SCORE], [WHAT YOU GOT RIGHT], [MISC
             "what_student_got_right": praise,
             "what_is_missing"     : what_missing,
             "correction"          : correction,
-                "followup_tip"        : followup or f"Re-read the section on {question['concept']}.",
-                "encouragement"       : "Keep going — every answer makes you stronger! 🌱",
-                "missing_concepts"    : missing,
-                "graph_missing"       : graph_missing,
-                "missing_links"       : missing_links,
-                "wrong_connections"   : wrong_connections,
-                "graph_ctx"           : graph_ctx,
-                "student_triplets"    : misc_report.get("student_triplets", []),
-                "ref_triplets"        : misc_report.get("ref_triplets", []),
-            }
+            "followup_tip"        : followup or f"Re-read the section on {question['concept']}.",
+            "encouragement"       : "Keep going — every answer makes you stronger! 🌱",
+            "missing_concepts"    : missing,
+            "graph_missing"       : graph_missing,
+            "missing_links"       : missing_links,
+            "wrong_connections"   : wrong_connections,
+            "graph_ctx"           : graph_ctx,
+            "student_triplets"    : misc_report.get("student_triplets", []),
+            "ref_triplets"        : misc_report.get("ref_triplets", []),
+        }
 
     # ── Offline fallback ─────────────────────────────────────────
     if score > 0.7:

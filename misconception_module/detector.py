@@ -12,17 +12,34 @@ _graph_gen_loaded = False  # tracks whether we already attempted loading
 def _get_graph_gen():
     global _graph_gen, _graph_gen_loaded
     if _graph_gen_loaded:
-        return _graph_gen  # return cached result (could be None)
+        return _graph_gen
     _graph_gen_loaded = True
     try:
         from training.models.misconception_graph_gen import load_graph_gen
-        print("[Detector] Loading T5 Graph Generator for structural analysis...")
+        print("[Detector] Loading T5 Graph Generator...")
         _graph_gen = load_graph_gen("weights/t5_graph_gen_final")
-        print("[Detector] ✓ T5 Graph Generator loaded successfully.")
     except Exception as e:
-        print(f"[Detector] T5 Graph Gen unavailable ({type(e).__name__}: {e}). Using keyword-only analysis.")
+        print(f"[Detector] T5 Graph Gen unavailable: {e}")
         _graph_gen = None
     return _graph_gen
+
+
+# ── Lazy-loaded Semantic Model ──────────────────────────────────────
+_semantic_model = None
+
+def _get_semantic_model():
+    global _semantic_model
+    if _semantic_model is not None:
+        return _semantic_model
+    try:
+        from sentence_transformers import SentenceTransformer
+        print("[Detector] Loading Semantic Similarity Model...")
+        _semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
+        print("[Detector] ✓ Semantic Model loaded.")
+    except Exception as e:
+        print(f"[Detector] Semantic model load failed: {e}")
+        _semantic_model = None
+    return _semantic_model
 
 
 STOP_WORDS = {
@@ -69,15 +86,15 @@ def detect_misconceptions(
 
     # ── 2. Semantic Similarity (Meaning-based) ──
     semantic_score = keyword_score # Default fallback
-    try:
-        from sentence_transformers import SentenceTransformer, util
-        # This model is lightweight and already downloaded for RAG
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        emb1 = model.encode(student_answer, convert_to_tensor=True)
-        emb2 = model.encode(reference_text, convert_to_tensor=True)
-        semantic_score = float(util.cos_sim(emb1, emb2)[0][0])
-    except Exception as e:
-        print(f"[Detector] Semantic scoring unavailable: {e}")
+    model = _get_semantic_model()
+    if model:
+        try:
+            from sentence_transformers import util
+            emb1 = model.encode(student_answer, convert_to_tensor=True)
+            emb2 = model.encode(reference_text, convert_to_tensor=True)
+            semantic_score = float(util.cos_sim(emb1, emb2)[0][0])
+        except Exception as e:
+            print(f"[Detector] Semantic scoring failed: {e}")
 
     # ── 3. Blended Score ──
     # We give more weight to semantic meaning (70%) than exact keyword matches (30%)
