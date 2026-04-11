@@ -191,12 +191,20 @@ with st.sidebar:
                         st.session_state.retriever.graph_nodes = list(st.session_state.retriever.knowledge_graph.nodes())
                     
                     # 2. GENERATE CLEAN AI SUMMARY
-                    new_summary = generate_curriculum_summary(st.session_state.retriever, st.session_state.language)
-                    
-                    # 3. PURGE OFFLINE MARKERS FROM HISTORY
-                    topics_str = "  \n".join([f"• {t}" for t in new_summary.get("topics", [])])
-                    st.session_state.messages[0]["content"] = f"""👋 **Hello, {st.session_state.student_name}!**\n\n{new_summary.get("greeting", "")}\n\n**Topics I found in your material:**\n{topics_str}\n\nI identified **{new_summary.get("concept_count", "many")} concepts** in your graph.\n\n{new_summary.get("encouragement", "")}\n\n---\n**AI Analysis is now active!** Your next questions will be significantly more accurate."""
-                    st.rerun()
+                    try:
+                        new_summary = generate_curriculum_summary(st.session_state.retriever, st.session_state.language)
+                        
+                        # Check if it STILL returned an offline message
+                        if "⚠️ [OFFLINE MODE]" in new_summary.get("greeting", ""):
+                            st.warning(f"AI Upgrade failed. Reason: {engine._last_error or 'Unknown API failure'}")
+                        else:
+                            # 3. PURGE OFFLINE MARKERS FROM HISTORY
+                            topics_str = "  \n".join([f"• {t}" for t in new_summary.get("topics", [])])
+                            st.session_state.messages[0]["content"] = f"""👋 **Hello, {st.session_state.student_name}!**\n\n{new_summary.get("greeting", "")}\n\n**Topics I found in your material:**\n{topics_str}\n\nI identified **{new_summary.get("concept_count", "many")} concepts** in your graph.\n\n{new_summary.get("encouragement", "")}\n\n---\n**AI Analysis is now active!** Your next questions will be significantly more accurate."""
+                            st.success("✨ Curriculum upgraded to AI mode!")
+                            st.rerun()
+                    except Exception as upgrade_err:
+                        st.error(f"Upgrade crashed: {str(upgrade_err)}")
 
     st.markdown("---")
 
@@ -212,11 +220,17 @@ with st.sidebar:
                 st.success("✅ Gemini Active (fallback)")
             else:
                 st.error("Invalid key")
-        elif st.session_state.gemini_ok and not st.session_state.get("groq_ok"):
-            st.success("✅ Gemini Active")
-
-    if not st.session_state.gemini_ok and not st.session_state.get("groq_ok"):
+        if not st.session_state.gemini_ok and not st.session_state.get("groq_ok"):
         st.info("ℹ️ Enter a Groq or Gemini key above for AI-powered tutoring")
+    
+    # ── AI Status / Error Debugging ────────────────────────────────
+    if engine._last_error:
+        with st.expander("⚠️ AI Connection Details", expanded=True):
+            st.error(f"Last Error: {engine._last_error}")
+            st.caption("If you see 'Rate Limit', wait 1 min. If 'Invalid Key', check your key.")
+            if st.button("🔄 Clear Error & Retry", use_container_width=True):
+                engine._last_error = ""
+                st.rerun()
 
 
     # ── Multilingual Mode ──────────────────────────────────────

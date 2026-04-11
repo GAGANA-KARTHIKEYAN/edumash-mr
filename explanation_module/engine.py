@@ -51,53 +51,48 @@ def _llm(prompt: str, retries: int = 1) -> str | None:
     _last_error = "" # Reset
 
     # ── Try Groq ────────────────────────────────────────────────────
-    if _groq_client is not None:
-        # Priority Chain: Try 70B models, then immediately fall back to 8B models which are always available.
-        # This prevents "Offline Mode" when a user doesn't have 70B access.
+        # Priority Chain: Updated to use the latest Llama 3.3 and 3.1 models.
+        # We removed llama-3.1-70b as it has been decommissioned by Groq.
         model_chain = [
-            "llama-3.1-8b-instant",       # Fastest & Highest Availability
-            "llama3-8b-8192",            # Reliable Fallback
-            "llama-3.3-70b-versatile",    # Premium (requires specific account status)
-            "llama-3.1-70b-versatile"     # Premium (legacy)
+            "llama-3.3-70b-versatile", # Replacement for the decommissioned 3.1-70b
+            "llama-3.1-8b-instant",    # High-speed fallback
+            "llama3-8b-8192",         # Original Llama 3 Stable
+            "mixtral-8x7b-32768",     # Multi-hop reasoning fallback
+            "gemma2-9b-it",           # Google's open model on Groq
+            "llama-3.2-11b-vision-preview" # Vision-capable fallback
         ]
         
-        # If we already found a working model in a previous turn, use it.
+        # If we already found a working model, start there.
         start_idx = 0
         if _groq_model_override in model_chain:
             start_idx = model_chain.index(_groq_model_override)
         
         for model_idx in range(start_idx, len(model_chain)):
             current_model = model_chain[model_idx]
-            for attempt in range(retries + 1):
-                try:
-                    resp = _groq_client.chat.completions.create(
-                        model=current_model,
-                        messages=[{"role": "user", "content": prompt}],
-                        max_tokens=4096,
-                        temperature=0.1,
-                    )
-                    text = resp.choices[0].message.content.strip()
-                    # Success! Persist this model for the rest of the session
-                    _groq_model_override = current_model
-                    with open("engine_debug.log", "a", encoding="utf-8") as f:
-                        f.write(f"[Groq] Success model={current_model}: {text[:60]}...\n")
-                    return text
-                except Exception as e:
-                    err = str(e)
-                    _last_error = f"Groq ({current_model}): {err}"
-                    with open("engine_debug.log", "a", encoding="utf-8") as f:
-                        f.write(f"[Groq] {current_model} attempt {attempt} failed: {err}\n")
-                    
-                    if "rate" in err.lower() or "429" in err:
-                        time.sleep(1) # Tiny wait then try next model
-                        break # Try next model in chain
-                    elif "not_found" in err.lower() or "permission" in err.lower() or "model" in err.lower():
-                        break # Key doesn't have access to this model, try next one
-                    else:
-                        # For other errors (authorization, etc.), don't just loop models, skip to Gemini
-                        break 
-            
-            # If we reached here, this model failed. Persist the NEXT model in the chain for future calls
+            try:
+                resp = _groq_client.chat.completions.create(
+                    model=current_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=4096,
+                    temperature=0.1,
+                )
+                text = resp.choices[0].message.content.strip()
+                _groq_model_override = current_model
+                return text
+            except Exception as e:
+                err = str(e)
+                _last_error = f"Groq ({current_model}): {err}"
+                
+                # If the model is decommissioned or not found, clear the override and skip to next
+                if "decommissioned" in err.lower() or "not_found" in err.lower():
+                    _groq_model_override = None # Reset so we don't try it again
+                    continue 
+                
+                if "authentication" in err.lower() or "invalid_api_key" in err.lower():
+                    _groq_client = None
+                    break
+
+                continue
             if model_idx + 1 < len(model_chain):
                 _groq_model_override = model_chain[model_idx + 1]
 
@@ -173,7 +168,9 @@ Respond in this JSON format:
   "greeting": "A warm 2-3 sentence introduction telling the student what topics you've found in their material.",
   "topics": ["Topic 1", "Topic 2", "Topic 3"],
 }}
-IMPORTANT: You MUST write your ENTIRE response text (except JSON syntax keys) in {language}!
+}}
+IMPORTANT: You MUST write your ENTIRE response text (except JSON syntax keys) in {language}! 
+*Adaptive Behavior:* If the CURRICULUM EXCERPT is in a different language than {language}, ensure you provide accurate translations of technical concepts in your greeting.
 Only output the JSON. No markdown fences.
 """
     raw = _llm(prompt)
@@ -251,7 +248,9 @@ Respond with ONLY this JSON:
   "concept": "{target_concept}",
   "difficulty": "medium"
 }}
-IMPORTANT: Write the "question" strictly in {language}.
+}}
+IMPORTANT: Write the "question" strictly in {language}. 
+*Fluidity Rule*: If the student has been answering in English but the session is set to {language}, you may include English technical terms in parentheses to help them bridge both languages.
 Only output raw JSON. No fences.
 """
     raw = _llm(prompt)
@@ -349,7 +348,12 @@ Format your response using EXACTLY these markers (do not change the markers):
 [FOLLOW UP QUESTION]
 <One deep, Socratic follow-up question to extend thinking.>
 
-CRITICAL FORMATTING RULE: The marker labels [SCORE], [WHAT YOU GOT RIGHT], [MISCONCEPTION IDENTIFIED], [CORRECT EXPLANATION], [FOLLOW UP QUESTION] MUST remain exactly in English. Do NOT translate them. Only the content inside each section should be in {language}. Be thorough. Do not skip any section.
+CRITICAL FORMATTING RULE: The marker labels [SCORE], [WHAT YOU GOT RIGHT], [MISCONCEPTION IDENTIFIED], [CORRECT EXPLANATION], [FOLLOW UP QUESTION] MUST remain exactly in English. Do NOT translate them. 
+
+LANGUAGE FLUIDITY & CODE-SWITCHING RULES:
+1. **Language-Agnostic Grading:** If the student's answer is in a language OTHER than {language} (e.g. they answered in English to a {language} question), you MUST still grade their technical accuracy fully. Do NOT penalize them for switching languages if the CONCEPT is correct.
+2. **Adaptive Response:** Respond primarily in {language}, but if the student code-switched to English, write your feedback in a "Bridge" style—using {language} for sentences but keeping English technical terms where the student did, to ensure total comprehension.
+3. Be thorough. Do not skip any section.
 """
     raw = _llm(prompt)
     if raw:
@@ -468,7 +472,9 @@ Generate a warm, detailed personalized report. Respond as JSON:
   "weakness_summary": "What needs work (2 sentences)",
   "study_plan": ["Step 1 to improve", "Step 2", "Step 3"],
 }}
-IMPORTANT: You MUST write your ENTIRE response text (except JSON syntax keys) in {language}!
+}}
+IMPORTANT: You MUST write your ENTIRE response text (except JSON syntax keys) in {language}! 
+*Code-Switching Support:* If the student performed better in English than {language}, note this in your 'headline' and encourage their bilingual mastery of the technical subject.
 Only output JSON, no fences.
 """
     raw = _llm(prompt)

@@ -58,14 +58,42 @@ def transcribe_audio(audio_path: str) -> str:
 
 
 # ── Image / OCR (optional) ─────────────────────────────────────────
+# ── Image / OCR (optional) ─────────────────────────────────────────
 def ocr_image(image_path: str) -> str:
+    """
+    Hybrid Vision Pipeline:
+    1. AI-Native OCR (Gemini Vision) — High fidelity for handwriting & multilingual.
+    2. Local Preprocessed Tesseract — Fallback with PIL sharpening.
+    """
+    # Attempt 1: Gemini Vision (Superior for Handwriting & Multi-lingual)
+    try:
+        from explanation_module.engine import _gemini_model
+        if _gemini_model is not None:
+            from PIL import Image
+            print("[input] Running Gemini Vision OCR...")
+            img = Image.open(image_path)
+            prompt = "Act as a high-precision OCR engine. Transcribe ALL text in this image perfectly, including handwritten notes and technical labels. Output ONLY the transcribed text. Do not add conversational padding."
+            response = _gemini_model.generate_content([prompt, img])
+            if response and response.text:
+                return response.text.strip()
+    except Exception as e:
+        print(f"[input] Gemini Vision OCR failed: {e}")
+
+    # Attempt 2: Local Tesseract with PIL Preprocessing
     try:
         import pytesseract
-        from PIL import Image
+        from PIL import Image, ImageOps, ImageEnhance
+        
+        # Open and Enhance for Tesseract
         img = Image.open(image_path)
-        return pytesseract.image_to_string(img)
+        img = ImageOps.grayscale(img)
+        img = ImageEnhance.Contrast(img).enhance(2.0) # Sharpen ink against paper
+        
+        # Config: psm 11 (Sparse text) or psm 6 (Single block)
+        config = "--psm 6" 
+        return pytesseract.image_to_string(img, config=config)
     except Exception as e:
-        print(f"[input] OCR failed: {e}")
+        print(f"[input] Local OCR fallback failed: {e}")
         return ""
 
 
