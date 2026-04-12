@@ -222,24 +222,38 @@ def generate_next_question(
     candidates = [n for n in weak if n not in asked_concepts]
     if not candidates:
         candidates = [n for n in graph_nodes if n not in asked_concepts]
-    if not candidates:
-        candidates = graph_nodes or ["the topic"]
+    
+    # RANKING: Sort by Graph Degree (Centrality) to ensure we ask about "Core" topics first
+    if candidates and retriever.knowledge_graph:
+        # Calculate degrees: G.degree(node) returns number of connections
+        scored = []
+        for n in candidates:
+            # Check if node exists in graph as a primitive label
+            deg = retriever.knowledge_graph.degree(n) if n in retriever.knowledge_graph else 0
+            scored.append((deg, n))
+        
+        # Sort descending by degree, then take top 8 for a bit of variety while staying relevant
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top_candidates = [x[1] for x in scored[:8]]
+        target_concept = random.choice(top_candidates)
+    else:
+        target_concept = random.choice(candidates[:5]) if candidates else "the curriculum"
 
-    target_concept = random.choice(candidates[:5])
-    flat_chunks, graph_ctx, _ = retriever.retrieve(target_concept, k=2)
-    context = " ".join(flat_chunks)[:600]
+    flat_chunks, graph_ctx, _ = retriever.retrieve(target_concept, k=3)
+    context = " ".join(flat_chunks)[:1000] 
 
-    # LLM question generation (Optimized for Technical Depth & Speed)
+LLM question generation (Optimized for First Principles & Technical Depth)
     prompt = f"""
-You are a technical tutor. Ask ONE specialized question about "{target_concept}" using the context below.
+You are a professor. Ask ONE challenging, university-grade question about "{target_concept}" using the context below.
 
 CONTEXT:
 {context}
 
-RULES:
-1. NO general philosophy or "how do you feel" questions.
-2. Be technical and concrete.
-3. Keep it to 1 concise sentence.
+PEDAGOGICAL RULES:
+1. FOCUS ON FIRST PRINCIPLES: Ask about "Why" or "How" (e.g. underlying mechanisms), not just "What".
+2. NO TRIVIALITY: Do not ask about formatting, chapter numbers, or specific figure labels.
+3. GROUNDING: Ensure the question can be answered using the technical facts in the CONTEXT.
+4. BE CONCISE: 1 clear, technical sentence.
 
 Student Progress: Q{question_number}/5.
 Respond with ONLY this JSON:
@@ -251,6 +265,8 @@ Respond with ONLY this JSON:
 }}
 IMPORTANT: Write the "question" strictly in {language}. 
 *Fluidity Rule*: If the student has been answering in English but the session is set to {language}, you may include English technical terms in parentheses to help them bridge both languages.
+*STRICT LANGUAGE GUARD*: If {language} is KANNADA, do NOT use Telugu, Tamil, or any other South Indian script. Stay strictly within the Kannada alphabet.
+*GROUNDING RULE*: Base your question ONLY on the actual philosophy/concepts in the curriculum. Do NOT ask about grammar, letter counts, or general language facts.
 Only output raw JSON. No fences.
 """
     raw = _llm(prompt)
@@ -353,15 +369,17 @@ CRITICAL FORMATTING RULE: The marker labels [SCORE], [WHAT YOU GOT RIGHT], [MISC
 LANGUAGE FLUIDITY & CODE-SWITCHING RULES:
 1. **Language-Agnostic Grading:** If the student's answer is in a language OTHER than {language} (e.g. they answered in English to a {language} question), you MUST still grade their technical accuracy fully. Do NOT penalize them for switching languages if the CONCEPT is correct.
 2. **Adaptive Response:** Respond primarily in {language}, but if the student code-switched to English, write your feedback in a "Bridge" style—using {language} for sentences but keeping English technical terms where the student did, to ensure total comprehension.
-3. Be thorough. Do not skip any section.
+3. **STRICT LANGUAGE GUARD**: If {language} is KANNADA, ensure NO Telugu words or script are used. They are visually similar but distinct. 
+4. **GROUNDING RULE**: Use the [CURRICULUM REFERENCE] for all technical feedback. Avoid hallucinating grammar-related corrections if the student is talking about Philosophy.
+5. Be thorough. Do not skip any section.
 """
     raw = _llm(prompt)
     if raw:
         def _extract(marker_start, marker_end, text):
-            """Extract text between two markers, tolerating missing brackets or markdown bold asterisks from the 8b model."""
-            # Match optional [, optional **, the marker, optional **, optional ], optional :
-            start_p = rf"\[?\*{{0,2}}{re.escape(marker_start)}\*{{0,2}}\]?\:?"
-            end_p = rf"\[?\*{{0,2}}{re.escape(marker_end)}\*{{0,2}}\]?\:?"
+            """Extract text between two markers with aggressive tolerance for formatting variations."""
+            # Patterns to match: [MARKER], **MARKER**, MARKER:, etc.
+            start_p = rf"(?:\[?\*{{0,2}}{re.escape(marker_start)}\*{{0,2}}\]?[\:\-\s]*)"
+            end_p = rf"(?:\[?\*{{0,2}}{re.escape(marker_end)}\*{{0,2}}\]?[\:\-\s]*)"
             pattern = rf'{start_p}\s*(.*?)\s*(?={end_p}|\Z)'
             m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
             return m.group(1).strip() if m else ""
@@ -372,21 +390,27 @@ LANGUAGE FLUIDITY & CODE-SWITCHING RULES:
         correction  = _extract("CORRECT EXPLANATION", "FOLLOW UP QUESTION", raw)
         followup    = _extract("FOLLOW UP QUESTION", "ZZEND", raw)
 
-        # Parse score safely
+        # Parse score safely - handle "0.8", "Score: 0.8", "80%" etc.
         try:
-            llm_score = float(re.search(r'\d+\.?\d*', score_raw).group())
-            llm_score = max(0.0, min(1.0, llm_score))
+            score_match = re.search(r'\d+\.?\d*', score_raw)
+            if score_match:
+                llm_score = float(score_match.group())
+                if llm_score > 1.0: llm_score /= 100.0 # Handle percentage (e.g. 85.0 -> 0.85)
+                llm_score = max(0.0, min(1.0, llm_score))
+            else:
+                llm_score = score
         except Exception:
             llm_score = score
 
-        # If formal section parsing fails completely on a smaller model, salvage the raw generation context
+        # If formal section parsing fails completely, preserve the raw text as a 'Comprehensive Feedback' block
         if not praise and not correction:
-            praise_clean = raw.replace("[SCORE]", "").replace(score_raw, "").strip()
-            praise = praise_clean if len(praise_clean) > 20 else "Good attempt!"
-            correction = "AI generated unstructured feedback; see above."
+            print("[engine] Regex extraction failed, using raw fallback.")
+            praise = raw
+            correction = "The explanation is embedded in the feedback above."
+            misconception = "See structural feedback above."
             
         what_missing = misconception if misconception else (
-            f"Missing concepts: {', '.join(missing)}" if missing else "See the correct explanation below."
+            f"Missing concepts: {', '.join(missing)}" if missing else "Review the correct explanation below."
         )
 
         return {

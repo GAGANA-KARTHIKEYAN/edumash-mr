@@ -538,20 +538,26 @@ if st.session_state.phase == "quiz":
     retriever = st.session_state.retriever
 
 
-    # Multimodal Input Options
-    # Multimodal Input Options
-    st.markdown("### 🗣️ Multimodal Answer Options")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        img_upload = st.file_uploader("📷 Upload handwritten notes (Image)", type=["png", "jpg", "jpeg"], key="img_upload")
-    
-    with col2:
-        tab_mic, tab_up = st.tabs(["🎙️ Record Voice", "📁 Upload Audio File"])
-        with tab_mic:
-            audio_record = st.audio_input("Speak your answer natively", key="audio_record")
-        with tab_up:
-            audio_upload = st.file_uploader("Upload pre-recorded audio", type=["wav", "mp3", "m4a"], key="audio_upload")
+    # Multimodal Input Options (Hidden during evaluation/transition)
+    # Using dynamic keys to force-clear buffers between questions
+    qn_key = str(st.session_state.question_count)
+    if st.session_state.awaiting_answer:
+        st.markdown("### 🗣️ Multimodal Answer Options")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            img_upload = st.file_uploader("📷 Upload handwritten notes (Image)", type=["png", "jpg", "jpeg"], key=f"img_upload_{qn_key}")
+        
+        with col2:
+            tab_mic, tab_up = st.tabs(["🎙️ Record Voice", "📁 Upload Audio File"])
+            with tab_mic:
+                audio_record = st.audio_input("Speak your answer natively", key=f"audio_record_{qn_key}")
+            with tab_up:
+                audio_upload = st.file_uploader("Upload pre-recorded audio", type=["wav", "mp3", "m4a"], key=f"audio_upload_{qn_key}")
+    else:
+        img_upload = None
+        audio_record = None
+        audio_upload = None
 
     # Final answer parsing
     from input_module.input_handler import get_input
@@ -605,7 +611,12 @@ if st.session_state.phase == "quiz":
         add_msg("user", answer)
 
         with st.spinner("🔍 Analysing your answer with Graph RAG…"):
-            ev = evaluate_student_answer_full(question, answer, retriever, st.session_state.language)
+            try:
+                ev = evaluate_student_answer_full(question, answer, retriever, st.session_state.language)
+            except Exception as e:
+                print(f"[app] AI Evaluation failed: {e}")
+                # Minimal fallback so the app keeps moving
+                ev = {"score": 0.5, "what_student_got_right": "I encountered an error analyzing this locally, but I've recorded your answer. Let's continue!"}
 
         score = ev.get("score", 0)
         score_pct = f"{int(score*100)}%"

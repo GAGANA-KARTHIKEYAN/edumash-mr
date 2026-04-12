@@ -63,7 +63,11 @@ STOP_WORDS = {
     "our", "them", "both", "all", "any", "some", "each", "every", "other",
     "uses", "provides", "shows", "described", "discussed", "within", "without",
     "using", "given", "during", "across", "along", "after", "before", "while", "though",
-    "decides", "performs", "refers", "means", "consists"
+    "decides", "performs", "refers", "means", "consists",
+    # Academic Layout Noise
+    "figure", "table", "section", "chapter", "page", "contents", "introduction",
+    "conclusion", "appendix", "references", "summary", "example", "note", "exercise",
+    "abstract", "keywords", "author", "authors", "date", "published", "journal"
 }
 
 
@@ -91,8 +95,12 @@ def _clean(text: str) -> str:
     if cleaned in STOP_WORDS:
         return ""
     
-    # If the word has no vowels and isn't a known acronym, it's likely noise (like 'lpus' often is)
-    if not any(v in cleaned for v in "aeiouy") and not cleaned.isupper():
+    # If the word has no vowels (in English) AND no Unicode non-ASCII chars, it's likely noise
+    # This allows Kannada/Telugu/Hindi script to pass through even without "aeiouy"
+    has_vowels = any(v in cleaned for v in "aeiouy")
+    has_unicode = any(ord(char) > 127 for char in cleaned)
+    
+    if not has_vowels and not has_unicode and not cleaned.isupper():
         return ""
 
     return cleaned.title()[:50] # Camel Case looks more professional
