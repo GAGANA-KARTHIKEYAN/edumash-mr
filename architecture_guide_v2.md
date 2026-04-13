@@ -109,7 +109,7 @@ Pillow>=10.0.0
 ## PART 5: MODELS & DATA
 
 ### Core Models:
-1. **Embedding Model:** `sentence-transformers/all-MiniLM-L6-v2`. Downloaded automatically from Hugging Face on the first run by the `sentence-transformers` library in `retrieval_module`.
+1. **Embedding Model:** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`. This is a specialized **Multilingual** model (L12 version) required to support Kannada, Telugu, Hindi, and 50+ other languages. It ensures that technical concepts are correctly indexed across different scripts.
 2. **Generative Engine (API):**
    - **Primary:** `llama-3.3-70b-versatile` via Groq. (Injected seamlessly via UI).
    - **Fallback:** Gemini 2.0 Flash (`gemini-1.5-flash` or similar) via Google GenAI.
